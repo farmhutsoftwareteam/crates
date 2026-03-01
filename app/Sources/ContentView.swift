@@ -6,8 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var chatViewModel: ChatViewModel
     @EnvironmentObject var folderWatcher: FolderWatcher
     @EnvironmentObject var audioPlayer:   AudioPlayer
-    @State private var chatOpen  = false
-    @State private var intelOpen = false
+    @State private var chatOpen = false
 
     var body: some View {
         ZStack {
@@ -24,21 +23,24 @@ struct ContentView: View {
                 HStack(spacing: 0) {
                     // ── Sidebar ──────────────────────────────────
                     CratesSidebar()
-                        .frame(width: 196)
+                        .frame(width: 180)
 
                     Rectangle().fill(Color.cratesBorder).frame(width: 1)
+
+                    // ── Set Intel — always visible ────────────────
+                    if let id = crateState.activeCrateId,
+                       let crate = crateState.crates.first(where: { $0.id == id }) {
+                        SetIntelView(crate: crate)
+                            .frame(width: 272)
+                        Rectangle().fill(Color.cratesBorder).frame(width: 1)
+                    }
 
                     // ── Main content ─────────────────────────────
                     ZStack(alignment: .bottomTrailing) {
                         Group {
                             if let id = crateState.activeCrateId,
                                let crate = crateState.crates.first(where: { $0.id == id }) {
-                                SongListView(crate: crate, onOpenIntel: {
-                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                                        intelOpen = true
-                                        chatOpen  = false
-                                    }
-                                })
+                                SongListView(crate: crate)
                             } else {
                                 EmptySetView()
                             }
@@ -49,32 +51,12 @@ struct ContentView: View {
                         if !chatOpen {
                             AshButton {
                                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                                    chatOpen  = true
-                                    intelOpen = false
+                                    chatOpen = true
                                 }
                             }
                             .padding(14)
                             .transition(.opacity.combined(with: .scale(scale: 0.85)))
                         }
-                    }
-
-                    // ── Set Intel panel ──────────────────────────
-                    if intelOpen,
-                       let id = crateState.activeCrateId,
-                       let crate = crateState.crates.first(where: { $0.id == id }) {
-                        HStack(spacing: 0) {
-                            Rectangle().fill(Color.cratesBorder).frame(width: 1)
-                            SetIntelView(crate: crate, onDismiss: {
-                                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                                    intelOpen = false
-                                }
-                            })
-                            .frame(width: 320)
-                        }
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal:   .move(edge: .trailing).combined(with: .opacity)
-                        ))
                     }
 
                     // ── Chat panel ───────────────────────────────
@@ -103,7 +85,7 @@ struct ContentView: View {
                 PlayerBar()
             }
         }
-        .frame(minWidth: 720, minHeight: 540)
+        .frame(minWidth: 820, minHeight: 540)
         // ── Import notifications (Downloads folder watcher) ──────
         .overlay(alignment: .bottomLeading) {
             VStack(alignment: .leading, spacing: 6) {

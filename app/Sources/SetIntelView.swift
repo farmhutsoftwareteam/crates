@@ -193,8 +193,7 @@ private func camelotCompatible(_ a: String, _ b: String) -> Bool {
 // MARK: - Main panel view
 
 struct SetIntelView: View {
-    let crate:     Crate
-    let onDismiss: () -> Void
+    let crate: Crate
 
     @EnvironmentObject var crateState: CrateState
 
@@ -271,15 +270,6 @@ struct SetIntelView: View {
                 .help(loadState == .done ? "Re-analyse set" : "")
             }
 
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.cratesDim)
-                    .frame(width: 20, height: 20)
-                    .background(Color.cratesElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)

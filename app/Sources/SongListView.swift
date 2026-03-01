@@ -1,8 +1,7 @@
 import SwiftUI
 
 struct SongListView: View {
-    let crate:       Crate
-    var onOpenIntel: (() -> Void)? = nil
+    let crate: Crate
 
     @EnvironmentObject var crateState: CrateState
 
@@ -142,12 +141,6 @@ struct SongListView: View {
                         crateState.reanalyseCrate(id: crate.id)
                     }
                     .disabled(isAnalysing)
-                }
-
-                // SET INTEL button
-                if !crate.songs.isEmpty, let onOpenIntel {
-                    IntelButton(action: onOpenIntel)
-                        .padding(.leading, 5)
                 }
 
                 Spacer().frame(width: 12)
@@ -291,39 +284,6 @@ private struct AnalyseButton: View {
     }
 }
 
-// MARK: - Intel button
-
-private struct IntelButton: View {
-    let action: () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 7, weight: .bold))
-                Text("INTEL")
-                    .font(.system(size: 8, weight: .black, design: .monospaced))
-                    .tracking(1.5)
-            }
-            .foregroundColor(hovered ? .cratesKey : Color.cratesKey.opacity(0.7))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(hovered ? Color.cratesKey.opacity(0.12) : Color.cratesKey.opacity(0.06))
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(
-                        hovered ? Color.cratesKey.opacity(0.4) : Color.cratesKey.opacity(0.2),
-                        lineWidth: 0.5
-                    )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 2))
-            .animation(.easeInOut(duration: 0.1), value: hovered)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-    }
-}
 
 // MARK: - Scan pulse dot
 

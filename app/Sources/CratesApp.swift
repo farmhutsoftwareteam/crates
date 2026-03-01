@@ -24,7 +24,7 @@ struct CratesApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
-        .defaultSize(width: 960, height: 640)
+        .defaultSize(width: 1100, height: 640)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Import Folder…") {
