@@ -1,11 +1,4 @@
 import SwiftUI
-import AVFoundation
-
-// MARK: - Stop-all-audio notification
-
-extension Notification.Name {
-    static let cratesStopAllAudio = Notification.Name("com.djmunya.crates.stopAllAudio")
-}
 
 // MARK: - Song card
 
@@ -13,7 +6,8 @@ struct SongCard: View {
     let song:     Song
     let position: Int
     let crateId:  UUID
-    @EnvironmentObject var crateState: CrateState
+    @EnvironmentObject var crateState:  CrateState
+    @EnvironmentObject var audioPlayer: AudioPlayer
 
     // Edit states
     @State private var hovered          = false
@@ -30,13 +24,17 @@ struct SongCard: View {
     @FocusState private var bpmFocused:   Bool
     @FocusState private var keyFocused:   Bool
 
-    // Audio playback (local files only)
-    @State private var avPlayer:  AVPlayer? = nil
-    @State private var isPlaying: Bool      = false
-
     var isLookingUp: Bool { crateState.pendingLookups.contains(song.id) }
     var isAnalysing: Bool { crateState.pendingAnalysis.contains(song.id) }
     var hasFailed:   Bool { crateState.analysisFailedIds.contains(song.id) }
+
+    // Is THIS song the one currently loaded in the shared player?
+    var isThisPlaying: Bool {
+        audioPlayer.currentSong?.id == song.id && audioPlayer.isPlaying
+    }
+    var isThisLoaded: Bool {
+        audioPlayer.currentSong?.id == song.id
+    }
 
     var hasLocalFile: Bool   { song.localFilePath != nil }
     var isSpotify:    Bool   { song.source == .spotify }
@@ -46,11 +44,16 @@ struct SongCard: View {
         return e.isEmpty ? nil : e
     }
 
+    private var crateQueue: [Song] {
+        crateState.crates.first(where: { $0.id == crateId })?.songs ?? []
+    }
+
     enum DownloadState { case idle, downloading, done, failed }
 
     // MARK: - Stripe colour
 
     private var stripeColor: Color {
+        if isThisPlaying          { return Color.cratesAccent }
         if hovered                { return Color.cratesAccent }
         if isSpotify              { return Color.cratesSpotify.opacity(0.5) }
         if hasLocalFile           { return Color.cratesAccent.opacity(0.28) }
@@ -288,29 +291,20 @@ struct SongCard: View {
         .onChange(of: isEditingNotes) { editing in if editing { notesFocused = true } }
         .onChange(of: isEditingBPM)   { editing in if editing { bpmFocused   = true } }
         .onChange(of: isEditingKey)   { editing in if editing { keyFocused   = true } }
-        // ── Audio: stop when another card starts playing ──────────
-        .onReceive(NotificationCenter.default.publisher(for: .cratesStopAllAudio)) { n in
-            if let id = n.object as? UUID, id == song.id { return }
-            if isPlaying { avPlayer?.pause(); isPlaying = false }
-        }
-        .onDisappear {
-            avPlayer?.pause()
-            avPlayer = nil
-            isPlaying = false
-        }
     }
 
     // MARK: - Computed appearance
 
     private var rowBackground: Color {
-        if isPlaying { return Color.cratesAccent.opacity(0.06) }
+        if isThisLoaded { return Color.cratesAccent.opacity(0.05) }
         return hovered ? Color.cratesSurface : Color.cratesBg
     }
 
     private var positionColor: Color {
-        if hovered   { return Color.cratesAccent.opacity(0.7) }
-        if isPlaying { return Color.cratesAccent }
-        if isSpotify { return Color.cratesSpotify.opacity(0.6) }
+        if hovered        { return Color.cratesAccent.opacity(0.7) }
+        if isThisPlaying  { return Color.cratesAccent }
+        if isThisLoaded   { return Color.cratesAccent.opacity(0.5) }
+        if isSpotify      { return Color.cratesSpotify.opacity(0.6) }
         return .cratesGhost
     }
 
@@ -319,21 +313,28 @@ struct SongCard: View {
     @ViewBuilder
     private var sourceSlot: some View {
         if hasLocalFile {
-            Button { togglePlayback() } label: {
-                Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+            Button {
+                if isThisLoaded {
+                    audioPlayer.togglePlayPause()
+                } else {
+                    audioPlayer.play(song: song, in: crateQueue)
+                }
+            } label: {
+                let icon = isThisPlaying ? "pause.fill" : "play.fill"
+                Image(systemName: icon)
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(isPlaying ? Color.cratesAccent : (hovered ? Color.cratesDim : Color(hex: "#333333")))
+                    .foregroundColor(isThisLoaded ? Color.cratesAccent : (hovered ? Color.cratesDim : Color(hex: "#333333")))
                     .frame(width: 20, height: 20)
                     .background(
-                        isPlaying
+                        isThisLoaded
                             ? Color.cratesAccent.opacity(0.18)
                             : (hovered ? Color.cratesElevated : Color.clear)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 3))
-                    .animation(.easeInOut(duration: 0.08), value: isPlaying)
+                    .animation(.easeInOut(duration: 0.08), value: isThisPlaying)
             }
             .buttonStyle(.plain)
-            .help(isPlaying ? "Stop" : "Play \(fileExt ?? "track")")
+            .help(isThisPlaying ? "Pause" : "Play \(fileExt ?? "track")")
         } else if isSpotify {
             ZStack {
                 Circle()
@@ -367,27 +368,6 @@ struct SongCard: View {
                 .fill(Color.cratesSpotify)
                 .frame(width: 6, height: 6)
                 .offset(x: 2, y: 2)
-        }
-    }
-
-    // MARK: - Audio playback
-
-    private func togglePlayback() {
-        guard let path = song.localFilePath else { return }
-        if isPlaying {
-            avPlayer?.pause()
-            isPlaying = false
-        } else {
-            // Tell every other card to stop
-            NotificationCenter.default.post(name: .cratesStopAllAudio, object: song.id)
-            let url = URL(fileURLWithPath: path)
-            if avPlayer == nil {
-                avPlayer = AVPlayer(url: url)
-            } else {
-                avPlayer?.seek(to: .zero)
-            }
-            avPlayer?.play()
-            isPlaying = true
         }
     }
 

@@ -10,6 +10,7 @@ struct CratesApp: App {
     @StateObject private var nowPlaying    = NowPlayingState()
     @StateObject private var chatViewModel = ChatViewModel()
     @StateObject private var folderWatcher = FolderWatcher()
+    @StateObject private var audioPlayer   = AudioPlayer()
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +19,7 @@ struct CratesApp: App {
                 .environmentObject(nowPlaying)
                 .environmentObject(chatViewModel)
                 .environmentObject(folderWatcher)
+                .environmentObject(audioPlayer)
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.titleBar)

@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var nowPlaying:    NowPlayingState
     @EnvironmentObject var chatViewModel: ChatViewModel
     @EnvironmentObject var folderWatcher: FolderWatcher
+    @EnvironmentObject var audioPlayer:   AudioPlayer
     @State private var chatOpen  = false
     @State private var intelOpen = false
 
@@ -93,9 +94,16 @@ struct ContentView: View {
                         ))
                     }
                 }
+
+                // ── Player bar (persistent bottom transport) ──────
+                Rectangle()
+                    .fill(Color.cratesBorder)
+                    .frame(height: 1)
+
+                PlayerBar()
             }
         }
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 720, minHeight: 540)
         // ── Import notifications (Downloads folder watcher) ──────
         .overlay(alignment: .bottomLeading) {
             VStack(alignment: .leading, spacing: 6) {
