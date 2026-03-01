@@ -21,6 +21,8 @@ extension Color {
     static let cratesGhost    = Color(hex: "#2A2A2A")
     /// Live / playing green
     static let cratesLive     = Color(hex: "#22C55E")
+    /// Spotify brand green
+    static let cratesSpotify  = Color(hex: "#1DB954")
     /// Camelot key — violet
     static let cratesKey      = Color(hex: "#A78BFA")
 

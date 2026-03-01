@@ -1,4 +1,13 @@
 import SwiftUI
+import AVFoundation
+
+// MARK: - Stop-all-audio notification
+
+extension Notification.Name {
+    static let cratesStopAllAudio = Notification.Name("com.djmunya.crates.stopAllAudio")
+}
+
+// MARK: - Song card
 
 struct SongCard: View {
     let song:     Song
@@ -6,6 +15,7 @@ struct SongCard: View {
     let crateId:  UUID
     @EnvironmentObject var crateState: CrateState
 
+    // Edit states
     @State private var hovered          = false
     @State private var isEditingNotes   = false
     @State private var notesText        = ""
@@ -14,56 +24,107 @@ struct SongCard: View {
     @State private var isEditingKey     = false
     @State private var keyText          = ""
     @State private var downloadState: DownloadState = .idle
-    @FocusState private var notesFocused: Bool
-    @FocusState private var bpmFocused: Bool
-    @FocusState private var keyFocused: Bool
 
-    var isLookingUp:  Bool { crateState.pendingLookups.contains(song.id) }
-    var isAnalysing:  Bool { crateState.pendingAnalysis.contains(song.id) }
-    var hasFailed:    Bool { crateState.analysisFailedIds.contains(song.id) }
+    // Focus states — must be set alongside the editing flag to get keyboard focus
+    @FocusState private var notesFocused: Bool
+    @FocusState private var bpmFocused:   Bool
+    @FocusState private var keyFocused:   Bool
+
+    // Audio playback (local files only)
+    @State private var avPlayer:  AVPlayer? = nil
+    @State private var isPlaying: Bool      = false
+
+    var isLookingUp: Bool { crateState.pendingLookups.contains(song.id) }
+    var isAnalysing: Bool { crateState.pendingAnalysis.contains(song.id) }
+    var hasFailed:   Bool { crateState.analysisFailedIds.contains(song.id) }
+
+    var hasLocalFile: Bool   { song.localFilePath != nil }
+    var isSpotify:    Bool   { song.source == .spotify }
+    var fileExt:      String? {
+        guard let p = song.localFilePath else { return nil }
+        let e = URL(fileURLWithPath: p).pathExtension.uppercased()
+        return e.isEmpty ? nil : e
+    }
 
     enum DownloadState { case idle, downloading, done, failed }
 
+    // MARK: - Stripe colour
+
+    private var stripeColor: Color {
+        if hovered                { return Color.cratesAccent }
+        if isSpotify              { return Color.cratesSpotify.opacity(0.5) }
+        if hasLocalFile           { return Color.cratesAccent.opacity(0.28) }
+        return Color.clear
+    }
+
+    // MARK: - Body
+
     var body: some View {
         HStack(spacing: 0) {
-            // ── Left accent stripe ───────────────────────────────
+            // ── Left source stripe ───────────────────────────────
             Rectangle()
-                .fill(hovered ? Color.cratesAccent : Color.clear)
+                .fill(stripeColor)
                 .frame(width: 2)
-                .animation(.easeInOut(duration: 0.1), value: hovered)
+                .animation(.easeInOut(duration: 0.12), value: hovered)
 
             HStack(spacing: 0) {
-                // Position
+                // ── Position ──────────────────────────────────────
                 Text(String(format: "%02d", position))
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(hovered ? Color.cratesAccent.opacity(0.7) : .cratesGhost)
+                    .foregroundColor(positionColor)
                     .frame(width: 32, alignment: .trailing)
                     .animation(.easeInOut(duration: 0.1), value: hovered)
 
-                Spacer().frame(width: 10)
+                Spacer().frame(width: 6)
 
-                // Track avatar
+                // ── Source slot (play / Spotify badge) ─────────
+                sourceSlot
+                    .frame(width: 22)
+
+                Spacer().frame(width: 6)
+
+                // ── Track avatar + source badge ───────────────
                 TrackAvatar(title: song.title, size: 28)
+                    .overlay(alignment: .bottomTrailing) { avatarBadge }
 
                 Spacer().frame(width: 10)
 
-                // Title + Artist
+                // ── Title + Artist ────────────────────────────
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.cratesPrimary)
                         .lineLimit(1)
-                    Text(song.artist.isEmpty ? "—" : song.artist)
-                        .font(.system(size: 10))
-                        .foregroundColor(.cratesDim)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(song.artist.isEmpty ? "—" : song.artist)
+                            .font(.system(size: 10))
+                            .foregroundColor(.cratesDim)
+                            .lineLimit(1)
+                        if isSpotify {
+                            Text("SPOTIFY")
+                                .font(.system(size: 7, weight: .black))
+                                .tracking(0.5)
+                                .foregroundColor(Color.cratesSpotify.opacity(0.8))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.cratesSpotify.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 2))
+                        } else if let ext = fileExt {
+                            Text(ext)
+                                .font(.system(size: 7, weight: .black, design: .monospaced))
+                                .foregroundColor(Color.cratesAccent.opacity(0.65))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.cratesAccent.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 2))
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 // ── BPM ──────────────────────────────────────────
                 Group {
                     if isLookingUp && song.bpm == nil {
-                        // Spinner while Claude is looking it up
                         ProgressView()
                             .progressViewStyle(.circular)
                             .controlSize(.mini)
@@ -80,8 +141,8 @@ struct SongCard: View {
                             .onSubmit     { commitBPM() }
                             .onExitCommand { isEditingBPM = false }
                     } else {
-                        let bpmLabel = song.bpm.map { "\($0)" } ?? (isLookingUp ? "…" : "—")
-                        Text(bpmLabel)
+                        let label = song.bpm.map { "\($0)" } ?? (isLookingUp ? "…" : "—")
+                        Text(label)
                             .font(.system(size: 11, weight: .black, design: .monospaced))
                             .foregroundColor(song.bpm != nil ? .cratesAccent : .cratesGhost)
                             .frame(width: 54, alignment: .center)
@@ -152,19 +213,18 @@ struct SongCard: View {
                         .foregroundColor(song.notes.isEmpty ? .cratesGhost : Color(hex: "#484848"))
                         .frame(width: 148, alignment: .leading)
                         .lineLimit(1)
+                        .contentShape(Rectangle())
                         .onTapGesture {
                             notesText = song.notes
                             isEditingNotes = true
                         }
                 }
 
-                // ── Download / Find / Re-analyse actions ─────────
+                // ── Hover actions ─────────────────────────────────
                 if hovered {
                     HStack(spacing: 6) {
                         // Re-analyse
-                        Button {
-                            crateState.reanalyse(song: song)
-                        } label: {
+                        Button { crateState.reanalyse(song: song) } label: {
                             Group {
                                 if isAnalysing {
                                     ProgressView()
@@ -182,17 +242,13 @@ struct SongCard: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(isAnalysing)
-                        .help("Re-analyse track (BPM, key, energy)")
+                        .help("Re-analyse track")
 
-                        // Download via yt-dlp (SoundCloud)
+                        // Download via yt-dlp
                         if DJPool.ytDlpPath != nil {
-                            Button {
-                                downloadTrack()
-                            } label: {
-                                downloadIcon
-                            }
-                            .buttonStyle(.plain)
-                            .help("Download from SoundCloud via yt-dlp")
+                            Button { downloadTrack() } label: { downloadIcon }
+                                .buttonStyle(.plain)
+                                .help("Download from SoundCloud")
                         }
 
                         // Find on pool
@@ -225,12 +281,124 @@ struct SongCard: View {
             .padding(.horizontal, 8)
         }
         .frame(height: 46)
-        .background(hovered ? Color.cratesSurface : Color.cratesBg)
+        .background(rowBackground)
         .animation(.easeInOut(duration: 0.08), value: hovered)
         .onHover { hovered = $0 }
+        // ── Focus fixes: set focus state when editing begins ─────
+        .onChange(of: isEditingNotes) { editing in if editing { notesFocused = true } }
+        .onChange(of: isEditingBPM)   { editing in if editing { bpmFocused   = true } }
+        .onChange(of: isEditingKey)   { editing in if editing { keyFocused   = true } }
+        // ── Audio: stop when another card starts playing ──────────
+        .onReceive(NotificationCenter.default.publisher(for: .cratesStopAllAudio)) { n in
+            if let id = n.object as? UUID, id == song.id { return }
+            if isPlaying { avPlayer?.pause(); isPlaying = false }
+        }
+        .onDisappear {
+            avPlayer?.pause()
+            avPlayer = nil
+            isPlaying = false
+        }
     }
 
-    // MARK: - Actions
+    // MARK: - Computed appearance
+
+    private var rowBackground: Color {
+        if isPlaying { return Color.cratesAccent.opacity(0.06) }
+        return hovered ? Color.cratesSurface : Color.cratesBg
+    }
+
+    private var positionColor: Color {
+        if hovered   { return Color.cratesAccent.opacity(0.7) }
+        if isPlaying { return Color.cratesAccent }
+        if isSpotify { return Color.cratesSpotify.opacity(0.6) }
+        return .cratesGhost
+    }
+
+    // MARK: - Source slot (play button or Spotify indicator)
+
+    @ViewBuilder
+    private var sourceSlot: some View {
+        if hasLocalFile {
+            Button { togglePlayback() } label: {
+                Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(isPlaying ? Color.cratesAccent : (hovered ? Color.cratesDim : Color(hex: "#333333")))
+                    .frame(width: 20, height: 20)
+                    .background(
+                        isPlaying
+                            ? Color.cratesAccent.opacity(0.18)
+                            : (hovered ? Color.cratesElevated : Color.clear)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .animation(.easeInOut(duration: 0.08), value: isPlaying)
+            }
+            .buttonStyle(.plain)
+            .help(isPlaying ? "Stop" : "Play \(fileExt ?? "track")")
+        } else if isSpotify {
+            ZStack {
+                Circle()
+                    .fill(Color.cratesSpotify.opacity(0.14))
+                    .frame(width: 17, height: 17)
+                Text("S")
+                    .font(.system(size: 8, weight: .black))
+                    .foregroundColor(Color.cratesSpotify)
+            }
+            .help("Spotify track — no local file")
+        } else {
+            Color.clear
+        }
+    }
+
+    // MARK: - Avatar badge
+
+    @ViewBuilder
+    private var avatarBadge: some View {
+        if let ext = fileExt {
+            Text(String(ext.prefix(3)))
+                .font(.system(size: 5, weight: .black, design: .monospaced))
+                .foregroundColor(Color.cratesAccent)
+                .padding(.horizontal, 2)
+                .padding(.vertical, 1)
+                .background(Color(hex: "#0A0A0A"))
+                .clipShape(RoundedRectangle(cornerRadius: 1))
+                .offset(x: 5, y: 5)
+        } else if isSpotify {
+            Circle()
+                .fill(Color.cratesSpotify)
+                .frame(width: 6, height: 6)
+                .offset(x: 2, y: 2)
+        }
+    }
+
+    // MARK: - Audio playback
+
+    private func togglePlayback() {
+        guard let path = song.localFilePath else { return }
+        if isPlaying {
+            avPlayer?.pause()
+            isPlaying = false
+        } else {
+            // Tell every other card to stop
+            NotificationCenter.default.post(name: .cratesStopAllAudio, object: song.id)
+            let url = URL(fileURLWithPath: path)
+            if avPlayer == nil {
+                avPlayer = AVPlayer(url: url)
+            } else {
+                avPlayer?.seek(to: .zero)
+            }
+            avPlayer?.play()
+            isPlaying = true
+        }
+    }
+
+    // MARK: - Note / BPM / Key commits
+
+    private func commitNotes() {
+        var updated = song
+        updated.notes = notesText
+        crateState.updateSong(updated, in: crateId)
+        isEditingNotes = false
+    }
 
     private func commitBPM() {
         var updated = song
@@ -247,12 +415,7 @@ struct SongCard: View {
         isEditingKey = false
     }
 
-    private func commitNotes() {
-        var updated = song
-        updated.notes = notesText
-        crateState.updateSong(updated, in: crateId)
-        isEditingNotes = false
-    }
+    // MARK: - Other actions
 
     private func openInBrowser(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
@@ -273,10 +436,10 @@ struct SongCard: View {
     private var downloadIcon: some View {
         let (icon, color): (String, Color) = {
             switch downloadState {
-            case .idle:        return ("arrow.down", .cratesDim)
-            case .downloading: return ("ellipsis", .cratesAccent)
-            case .done:        return ("checkmark", .cratesLive)
-            case .failed:      return ("xmark", .red)
+            case .idle:        return ("arrow.down",  .cratesDim)
+            case .downloading: return ("ellipsis",    .cratesAccent)
+            case .done:        return ("checkmark",   .cratesLive)
+            case .failed:      return ("xmark",       .red)
             }
         }()
         Image(systemName: icon)
@@ -291,9 +454,8 @@ struct SongCard: View {
 // MARK: - Energy bar
 
 /// 5-segment VU-meter style bar showing energy 0–10.
-/// Shows a pulsing dot when librosa analysis is in progress.
 struct EnergyBar: View {
-    let energy:      Double?   // 0–10 or nil
+    let energy:      Double?
     let isAnalysing: Bool
     let hasFailed:   Bool
 
@@ -310,7 +472,7 @@ struct EnergyBar: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 9))
                 .foregroundColor(.red.opacity(0.6))
-                .help("Analysis failed — try Re-analyse from right-click menu")
+                .help("Analysis failed — right-click → Re-analyse")
         } else if let e = energy {
             let lit = Int((e / 10.0 * Double(segments)).rounded())
             HStack(spacing: 2) {
@@ -334,7 +496,7 @@ struct EnergyBar: View {
     }
 }
 
-private struct PulseModifier: ViewModifier {
+struct PulseModifier: ViewModifier {
     @State private var scale = 1.0
     func body(content: Content) -> some View {
         content
