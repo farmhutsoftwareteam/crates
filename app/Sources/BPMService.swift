@@ -158,7 +158,7 @@ enum DJPool {
     }
 
     /// Downloads a track from SoundCloud using yt-dlp into ~/Music/Crates/.
-    /// Calls completion on the main thread with the downloaded file path or nil.
+    /// Completion is called on the main thread with the actual downloaded file path, or nil on failure.
     static func downloadFromSoundCloud(title: String, artist: String, completion: @escaping (String?) -> Void) {
         guard let ytdlp = ytDlpPath else { completion(nil); return }
 
@@ -166,8 +166,10 @@ enum DJPool {
             .appendingPathComponent("Music/Crates")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let query = "scsearch1:\(artist) \(title)"
+        let query       = "scsearch1:\(artist) \(title)"
         let outTemplate = dir.appendingPathComponent("%(artist)s - %(title)s.%(ext)s").path
+        let beforeFiles = Set(audioFilesInDir(dir))
+        let startTime   = Date()
 
         DispatchQueue.global(qos: .utility).async {
             let proc = Process()
@@ -184,8 +186,28 @@ enum DJPool {
             proc.standardError  = Pipe()
             try? proc.run()
             proc.waitUntilExit()
-            let success = proc.terminationStatus == 0
-            DispatchQueue.main.async { completion(success ? dir.path : nil) }
+            guard proc.terminationStatus == 0 else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            // Find the file that appeared in the directory since we started
+            let afterFiles = Set(audioFilesInDir(dir))
+            let newFiles   = afterFiles.subtracting(beforeFiles)
+            // Also accept any file touched in the last 120s as fallback
+            let filePath: String? = newFiles.first ?? audioFilesInDir(dir).filter { path in
+                let url  = URL(fileURLWithPath: path)
+                let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return date > startTime
+            }.first
+            DispatchQueue.main.async { completion(filePath) }
         }
+    }
+
+    private static func audioFilesInDir(_ dir: URL) -> [String] {
+        let exts: Set<String> = ["mp3", "m4a", "aac", "ogg", "flac", "wav", "aiff"]
+        return (try? FileManager.default.contentsOfDirectory(at: dir,
+                                                             includingPropertiesForKeys: nil))?.compactMap { url in
+            exts.contains(url.pathExtension.lowercased()) ? url.path : nil
+        } ?? []
     }
 }

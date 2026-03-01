@@ -2,8 +2,18 @@ import Foundation
 import Combine
 
 enum SongSource: String, Codable {
-    case spotify
-    case manual
+    case spotify    // added via Spotify integration — no local file
+    case manual     // added by hand — no local file
+    case localFile  // imported from a local folder on disk
+    case downloaded // downloaded via yt-dlp (SoundCloud etc.)
+
+    /// Backwards-compat: old saves stored "manual" for both folder imports
+    /// and hand-adds. If a song has localFilePath set but source == .manual,
+    /// treat it as .localFile.
+    func resolved(hasLocalFile: Bool) -> SongSource {
+        if self == .manual && hasLocalFile { return .localFile }
+        return self
+    }
 }
 
 struct Song: Codable, Identifiable, Equatable {
@@ -246,7 +256,7 @@ class CrateState: ObservableObject {
                             bpm:           meta.bpm,
                             key:           meta.key,
                             durationMs:    meta.durationMs,
-                            source:        .manual,
+                            source:        .localFile,
                             localFilePath: fileURL.path
                         ))
                     }

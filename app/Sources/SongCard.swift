@@ -36,12 +36,29 @@ struct SongCard: View {
         audioPlayer.currentSong?.id == song.id
     }
 
-    var hasLocalFile: Bool   { song.localFilePath != nil }
-    var isSpotify:    Bool   { song.source == .spotify }
-    var fileExt:      String? {
+    var hasLocalFile: Bool { song.localFilePath != nil }
+
+    /// Resolved source — handles old saves that stored .manual for folder imports
+    var effectiveSource: SongSource { song.source.resolved(hasLocalFile: hasLocalFile) }
+
+    var isSpotify:    Bool { effectiveSource == .spotify }
+    var isLocalFile:  Bool { effectiveSource == .localFile }
+    var isDownloaded: Bool { effectiveSource == .downloaded }
+
+    var fileExt: String? {
         guard let p = song.localFilePath else { return nil }
         let e = URL(fileURLWithPath: p).pathExtension.uppercased()
         return e.isEmpty ? nil : e
+    }
+
+    // Source accent colour used across stripe, play button, and badge
+    var sourceAccent: Color {
+        switch effectiveSource {
+        case .spotify:    return Color.cratesSpotify
+        case .localFile:  return Color.cratesAccent
+        case .downloaded: return Color.cratesKey
+        case .manual:     return Color.cratesGhost
+        }
     }
 
     private var crateQueue: [Song] {
@@ -53,11 +70,10 @@ struct SongCard: View {
     // MARK: - Stripe colour
 
     private var stripeColor: Color {
-        if isThisPlaying          { return Color.cratesAccent }
-        if hovered                { return Color.cratesAccent }
-        if isSpotify              { return Color.cratesSpotify.opacity(0.5) }
-        if hasLocalFile           { return Color.cratesAccent.opacity(0.28) }
-        return Color.clear
+        if isThisPlaying { return Color.cratesAccent }
+        if hovered       { return Color.cratesAccent }
+        if effectiveSource == .manual { return Color.clear }
+        return sourceAccent.opacity(0.45)
     }
 
     // MARK: - Body
@@ -103,24 +119,7 @@ struct SongCard: View {
                             .font(.system(size: 10))
                             .foregroundColor(.cratesDim)
                             .lineLimit(1)
-                        if isSpotify {
-                            Text("SPOTIFY")
-                                .font(.system(size: 7, weight: .black))
-                                .tracking(0.5)
-                                .foregroundColor(Color.cratesSpotify.opacity(0.8))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background(Color.cratesSpotify.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 2))
-                        } else if let ext = fileExt {
-                            Text(ext)
-                                .font(.system(size: 7, weight: .black, design: .monospaced))
-                                .foregroundColor(Color.cratesAccent.opacity(0.65))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background(Color.cratesAccent.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 2))
-                        }
+                        sourcePill
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,35 +300,27 @@ struct SongCard: View {
     }
 
     private var positionColor: Color {
-        if hovered        { return Color.cratesAccent.opacity(0.7) }
-        if isThisPlaying  { return Color.cratesAccent }
-        if isThisLoaded   { return Color.cratesAccent.opacity(0.5) }
-        if isSpotify      { return Color.cratesSpotify.opacity(0.6) }
-        return .cratesGhost
+        if hovered       { return Color.cratesAccent.opacity(0.7) }
+        if isThisPlaying { return Color.cratesAccent }
+        if isThisLoaded  { return Color.cratesAccent.opacity(0.5) }
+        if effectiveSource == .manual { return .cratesGhost }
+        return sourceAccent.opacity(0.6)
     }
 
-    // MARK: - Source slot (play button or Spotify indicator)
+    // MARK: - Source slot (play / indicator)
 
     @ViewBuilder
     private var sourceSlot: some View {
         if hasLocalFile {
             Button {
-                if isThisLoaded {
-                    audioPlayer.togglePlayPause()
-                } else {
-                    audioPlayer.play(song: song, in: crateQueue)
-                }
+                if isThisLoaded { audioPlayer.togglePlayPause() }
+                else            { audioPlayer.play(song: song, in: crateQueue) }
             } label: {
-                let icon = isThisPlaying ? "pause.fill" : "play.fill"
-                Image(systemName: icon)
+                Image(systemName: isThisPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(isThisLoaded ? Color.cratesAccent : (hovered ? Color.cratesDim : Color(hex: "#333333")))
+                    .foregroundColor(isThisLoaded ? sourceAccent : (hovered ? Color.cratesDim : Color(hex: "#333333")))
                     .frame(width: 20, height: 20)
-                    .background(
-                        isThisLoaded
-                            ? Color.cratesAccent.opacity(0.18)
-                            : (hovered ? Color.cratesElevated : Color.clear)
-                    )
+                    .background(isThisLoaded ? sourceAccent.opacity(0.18) : (hovered ? Color.cratesElevated : Color.clear))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
                     .animation(.easeInOut(duration: 0.08), value: isThisPlaying)
             }
@@ -337,16 +328,55 @@ struct SongCard: View {
             .help(isThisPlaying ? "Pause" : "Play \(fileExt ?? "track")")
         } else if isSpotify {
             ZStack {
-                Circle()
-                    .fill(Color.cratesSpotify.opacity(0.14))
-                    .frame(width: 17, height: 17)
-                Text("S")
-                    .font(.system(size: 8, weight: .black))
-                    .foregroundColor(Color.cratesSpotify)
+                Circle().fill(Color.cratesSpotify.opacity(0.14)).frame(width: 17, height: 17)
+                Text("S").font(.system(size: 8, weight: .black)).foregroundColor(Color.cratesSpotify)
             }
-            .help("Spotify track — no local file")
+            .help("Spotify — no local file")
         } else {
             Color.clear
+        }
+    }
+
+    // MARK: - Source pill (under artist name)
+
+    @ViewBuilder
+    private var sourcePill: some View {
+        switch effectiveSource {
+        case .spotify:
+            HStack(spacing: 3) {
+                Image(systemName: "music.note").font(.system(size: 6, weight: .bold))
+                Text("SPOTIFY").font(.system(size: 7, weight: .black)).tracking(0.3)
+            }
+            .foregroundColor(Color.cratesSpotify.opacity(0.9))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(Color.cratesSpotify.opacity(0.1))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.cratesSpotify.opacity(0.25), lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 2))
+
+        case .localFile:
+            HStack(spacing: 3) {
+                Image(systemName: "folder.fill").font(.system(size: 6, weight: .bold))
+                Text(fileExt ?? "LOCAL").font(.system(size: 7, weight: .black, design: .monospaced)).tracking(0.3)
+            }
+            .foregroundColor(Color.cratesAccent.opacity(0.9))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(Color.cratesAccent.opacity(0.08))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.cratesAccent.opacity(0.25), lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 2))
+
+        case .downloaded:
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.down.circle.fill").font(.system(size: 6, weight: .bold))
+                Text(fileExt ?? "DL").font(.system(size: 7, weight: .black, design: .monospaced)).tracking(0.3)
+            }
+            .foregroundColor(Color.cratesKey.opacity(0.9))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(Color.cratesKey.opacity(0.1))
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.cratesKey.opacity(0.25), lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 2))
+
+        case .manual:
+            EmptyView()
         }
     }
 
@@ -355,19 +385,16 @@ struct SongCard: View {
     @ViewBuilder
     private var avatarBadge: some View {
         if let ext = fileExt {
+            let badgeColor = isDownloaded ? Color.cratesKey : Color.cratesAccent
             Text(String(ext.prefix(3)))
                 .font(.system(size: 5, weight: .black, design: .monospaced))
-                .foregroundColor(Color.cratesAccent)
-                .padding(.horizontal, 2)
-                .padding(.vertical, 1)
+                .foregroundColor(badgeColor)
+                .padding(.horizontal, 2).padding(.vertical, 1)
                 .background(Color(hex: "#0A0A0A"))
                 .clipShape(RoundedRectangle(cornerRadius: 1))
                 .offset(x: 5, y: 5)
         } else if isSpotify {
-            Circle()
-                .fill(Color.cratesSpotify)
-                .frame(width: 6, height: 6)
-                .offset(x: 2, y: 2)
+            Circle().fill(Color.cratesSpotify).frame(width: 6, height: 6).offset(x: 2, y: 2)
         }
     }
 
@@ -404,8 +431,16 @@ struct SongCard: View {
 
     private func downloadTrack() {
         downloadState = .downloading
-        DJPool.downloadFromSoundCloud(title: song.title, artist: song.artist) { path in
-            downloadState = path != nil ? .done : .failed
+        DJPool.downloadFromSoundCloud(title: song.title, artist: song.artist) { filePath in
+            if let path = filePath {
+                downloadState = .done
+                var updated = song
+                updated.localFilePath = path
+                updated.source = .downloaded
+                crateState.updateSong(updated, in: crateId)
+            } else {
+                downloadState = .failed
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { downloadState = .idle }
         }
     }
