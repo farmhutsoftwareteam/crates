@@ -121,6 +121,8 @@ class CrateState: ObservableObject {
     @Published var analysisFailedIds: Set<UUID> = []
     /// Result of the most recent crate analysis — shown as a brief banner
     @Published var lastAnalysisResult: AnalysisResult? = nil
+    /// Cached Set Intel results keyed by crate ID — persisted across sessions
+    @Published var setIntelCache: [UUID: SetIntel] = [:]
 
     private let persistenceURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -129,10 +131,17 @@ class CrateState: ObservableObject {
         return dir.appendingPathComponent("crates.json")
     }()
 
+    private let intelURL: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Crates", isDirectory: true)
+        return dir.appendingPathComponent("intel.json")
+    }()
+
     private var saveCancellable: AnyCancellable?
 
     init() {
         load()
+        loadIntel()
         // Auto-select first crate if none selected
         if activeCrateId == nil {
             activeCrateId = crates.first?.id
@@ -158,6 +167,7 @@ class CrateState: ObservableObject {
 
     func deleteCrate(_ crate: Crate) {
         crates.removeAll { $0.id == crate.id }
+        setIntelCache.removeValue(forKey: crate.id)
         if activeCrateId == crate.id {
             activeCrateId = crates.first?.id
         }
@@ -514,5 +524,29 @@ class CrateState: ObservableObject {
             return
         }
         crates = loaded
+    }
+
+    // MARK: - Set Intel cache persistence
+
+    func cacheSetIntel(_ intel: SetIntel, for crateId: UUID) {
+        setIntelCache[crateId] = intel
+        saveIntel()
+    }
+
+    private func saveIntel() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let stringKeyed = Dictionary(uniqueKeysWithValues: setIntelCache.map { ($0.key.uuidString, $0.value) })
+        guard let data = try? encoder.encode(stringKeyed) else { return }
+        try? data.write(to: intelURL, options: .atomic)
+    }
+
+    private func loadIntel() {
+        let decoder = JSONDecoder()
+        guard let data = try? Data(contentsOf: intelURL),
+              let loaded = try? decoder.decode([String: SetIntel].self, from: data) else { return }
+        setIntelCache = Dictionary(uniqueKeysWithValues: loaded.compactMap { k, v in
+            UUID(uuidString: k).map { ($0, v) }
+        })
     }
 }

@@ -2,8 +2,8 @@ import SwiftUI
 
 // MARK: - Data model
 
-struct SetIntel {
-    struct VenueContext {
+struct SetIntel: Codable {
+    struct VenueContext: Codable {
         let venueType: String
         let timeSlot:  String
         let crowdType: String
@@ -11,7 +11,7 @@ struct SetIntel {
         let verdict:   String
     }
 
-    struct TrackIntel {
+    struct TrackIntel: Codable {
         let toPosition:    Int      // 1-based incoming track number
         let title:         String
         let note:          String
@@ -196,6 +196,8 @@ struct SetIntelView: View {
     let crate:     Crate
     let onDismiss: () -> Void
 
+    @EnvironmentObject var crateState: CrateState
+
     enum LoadState { case idle, loading, done, failed }
 
     @State private var loadState: LoadState = .idle
@@ -209,6 +211,13 @@ struct SetIntelView: View {
             panelBody
         }
         .background(Color.cratesBg)
+        .onAppear {
+            // Restore cached result instantly — no re-analysis needed
+            if intel == nil, let cached = crateState.setIntelCache[crate.id] {
+                intel     = cached
+                loadState = .done
+            }
+        }
     }
 
     // MARK: Header
@@ -238,18 +247,28 @@ struct SetIntelView: View {
 
             Spacer()
 
-            if loadState == .idle || loadState == .failed {
+            if loadState != .loading {
                 Button { Task { await runAnalysis() } } label: {
-                    Text(loadState == .failed ? "RETRY" : "ANALYSE")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(1.5)
-                        .foregroundColor(Color.cratesBg)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.cratesAccent)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                    if loadState == .done {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.cratesDim)
+                            .frame(width: 22, height: 22)
+                            .background(Color.cratesElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    } else {
+                        Text(loadState == .failed ? "RETRY" : "ANALYSE")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(1.5)
+                            .foregroundColor(Color.cratesBg)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.cratesAccent)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
                 }
                 .buttonStyle(.plain)
+                .help(loadState == .done ? "Re-analyse set" : "")
             }
 
             Button(action: onDismiss) {
@@ -370,6 +389,7 @@ struct SetIntelView: View {
         if let result = await SetIntelService.analyse(crate: crate) {
             intel     = result
             loadState = .done
+            crateState.cacheSetIntel(result, for: crate.id)
         } else {
             loadState = .failed
         }
