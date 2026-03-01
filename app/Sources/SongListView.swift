@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct SongListView: View {
-    let crate: Crate
+    let crate:        Crate
+    var onOpenIntel:  (() -> Void)? = nil
     @EnvironmentObject var crateState: CrateState
 
     @State private var analysisToast: String? = nil
@@ -39,6 +40,30 @@ struct SongListView: View {
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .tracking(1.5)
                         .foregroundColor(.cratesDim)
+                }
+
+                // SET INTEL trigger
+                if !crate.songs.isEmpty, let onOpenIntel {
+                    Button(action: onOpenIntel) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "waveform.path.ecg")
+                                .font(.system(size: 7, weight: .bold))
+                            Text("SET INTEL")
+                                .font(.system(size: 8, weight: .black))
+                                .tracking(1.5)
+                        }
+                        .foregroundColor(.cratesKey)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.cratesKey.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(Color.cratesKey.opacity(0.25), lineWidth: 0.5)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 8)
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: isAnalysing)

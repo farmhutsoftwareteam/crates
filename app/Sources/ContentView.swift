@@ -5,7 +5,8 @@ struct ContentView: View {
     @EnvironmentObject var nowPlaying:    NowPlayingState
     @EnvironmentObject var chatViewModel: ChatViewModel
     @EnvironmentObject var folderWatcher: FolderWatcher
-    @State private var chatOpen = false
+    @State private var chatOpen  = false
+    @State private var intelOpen = false
 
     var body: some View {
         ZStack {
@@ -26,12 +27,17 @@ struct ContentView: View {
 
                     Rectangle().fill(Color.cratesBorder).frame(width: 1)
 
-                    // ── Main content — ASH button lives here ─────
+                    // ── Main content ─────────────────────────────
                     ZStack(alignment: .bottomTrailing) {
                         Group {
                             if let id = crateState.activeCrateId,
                                let crate = crateState.crates.first(where: { $0.id == id }) {
-                                SongListView(crate: crate)
+                                SongListView(crate: crate, onOpenIntel: {
+                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                                        intelOpen = true
+                                        chatOpen  = false
+                                    }
+                                })
                             } else {
                                 EmptySetView()
                             }
@@ -42,12 +48,32 @@ struct ContentView: View {
                         if !chatOpen {
                             AshButton {
                                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                                    chatOpen = true
+                                    chatOpen  = true
+                                    intelOpen = false
                                 }
                             }
                             .padding(14)
                             .transition(.opacity.combined(with: .scale(scale: 0.85)))
                         }
+                    }
+
+                    // ── Set Intel panel ──────────────────────────
+                    if intelOpen,
+                       let id = crateState.activeCrateId,
+                       let crate = crateState.crates.first(where: { $0.id == id }) {
+                        HStack(spacing: 0) {
+                            Rectangle().fill(Color.cratesBorder).frame(width: 1)
+                            SetIntelView(crate: crate, onDismiss: {
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                                    intelOpen = false
+                                }
+                            })
+                            .frame(width: 320)
+                        }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal:   .move(edge: .trailing).combined(with: .opacity)
+                        ))
                     }
 
                     // ── Chat panel ───────────────────────────────
