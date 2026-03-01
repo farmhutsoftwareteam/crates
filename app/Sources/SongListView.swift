@@ -203,31 +203,38 @@ struct SongListView: View {
 
     // MARK: - Column labels
 
+    // Width must match SongCard's non-hover Spacer: 6(leading) + n×22 + (n-1)×6
+    private var hoverActionsWidth: CGFloat {
+        22 + 6 + 22 + 6 + (DJPool.ytDlpPath != nil ? 22 + 6 : 0)
+    }
+
     private var columnLabels: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: 3) // aligns with the orange rail above
-            Text("#")
-                .frame(width: 44, alignment: .trailing)
-            Color.clear.frame(width: 46)
-            Text("TITLE")
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 10)
-            Text("BPM")
-                .frame(width: 54, alignment: .center)
-            Text("KEY")
-                .frame(width: 48, alignment: .center)
-            Text("NRG")
-                .frame(width: 34, alignment: .center)
-            Text("NOTES")
-                .frame(width: 148, alignment: .leading)
-                .padding(.leading, 4)
-            Spacer().frame(width: 16)
+            // Matches the card's 2px left stripe (outside the inner HStack)
+            Color.clear.frame(width: 2)
+            // Mirror the card's inner HStack layout exactly, same .padding(.horizontal, 8)
+            HStack(spacing: 0) {
+                Text("#")
+                    .frame(width: 32, alignment: .trailing)           // matches position (32)
+                Color.clear.frame(width: 72)                          // 6+22+6+28+10: spacers+source+avatar
+                Text("TITLE")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("BPM")
+                    .frame(width: 54, alignment: .center)
+                Text("KEY")
+                    .frame(width: 48, alignment: .center)
+                Text("NRG")
+                    .frame(width: 34, alignment: .center)
+                Text("NOTES")
+                    .frame(width: 148, alignment: .leading)
+                Color.clear.frame(width: hoverActionsWidth + 10)      // hover placeholder + right spacer
+            }
+            .padding(.horizontal, 8)
         }
         .font(.system(size: 8, weight: .black, design: .monospaced))
         .tracking(2)
         .foregroundColor(.cratesGhost)
         .frame(height: 26)
-        .padding(.horizontal, 8)
         .background(Color.cratesSurface)
     }
 

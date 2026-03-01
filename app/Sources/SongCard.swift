@@ -126,6 +126,9 @@ struct SongCard: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { onSelectSong?(song) }
+                .help("Click to view track intel")
 
                 // ── BPM ──────────────────────────────────────────
                 Group {
