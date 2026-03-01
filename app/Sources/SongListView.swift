@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct SongListView: View {
-    let crate: Crate
+    let crate:        Crate
+    var onSelectSong: ((Song) -> Void)? = nil
 
     @EnvironmentObject var crateState: CrateState
 
@@ -39,7 +40,8 @@ struct SongListView: View {
             } else {
                 List {
                     ForEach(Array(crate.songs.enumerated()), id: \.element.id) { index, song in
-                        SongCard(song: song, position: index + 1, crateId: crate.id)
+                        SongCard(song: song, position: index + 1, crateId: crate.id,
+                                 onSelectSong: onSelectSong)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets())

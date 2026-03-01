@@ -6,7 +6,8 @@ struct ContentView: View {
     @EnvironmentObject var chatViewModel: ChatViewModel
     @EnvironmentObject var folderWatcher: FolderWatcher
     @EnvironmentObject var audioPlayer:   AudioPlayer
-    @State private var chatOpen = false
+    @State private var chatOpen      = false
+    @State private var selectedSong: Song? = nil
 
     var body: some View {
         ZStack {
@@ -40,23 +41,46 @@ struct ContentView: View {
                         Group {
                             if let id = crateState.activeCrateId,
                                let crate = crateState.crates.first(where: { $0.id == id }) {
-                                SongListView(crate: crate)
+                                SongListView(crate: crate, onSelectSong: { song in
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                        selectedSong = song
+                                        chatOpen     = false
+                                    }
+                                })
                             } else {
                                 EmptySetView()
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                        // ASH open button — only visible when chat is closed
-                        if !chatOpen {
+                        // ASH open button — only visible when chat is closed and no song selected
+                        if !chatOpen && selectedSong == nil {
                             AshButton {
                                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                                    chatOpen = true
+                                    chatOpen     = true
+                                    selectedSong = nil
                                 }
                             }
                             .padding(14)
                             .transition(.opacity.combined(with: .scale(scale: 0.85)))
                         }
+                    }
+
+                    // ── Song Intel panel ─────────────────────────
+                    if let song = selectedSong {
+                        HStack(spacing: 0) {
+                            Rectangle().fill(Color.cratesBorder).frame(width: 1)
+                            SongIntelView(song: song, onDismiss: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                    selectedSong = nil
+                                }
+                            })
+                            .frame(width: 300)
+                        }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal:   .move(edge: .trailing).combined(with: .opacity)
+                        ))
                     }
 
                     // ── Chat panel ───────────────────────────────

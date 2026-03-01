@@ -123,6 +123,8 @@ class CrateState: ObservableObject {
     @Published var lastAnalysisResult: AnalysisResult? = nil
     /// Cached Set Intel results keyed by crate ID — persisted across sessions
     @Published var setIntelCache: [UUID: SetIntel] = [:]
+    /// Cached Song Intel results keyed by song ID — persisted across sessions
+    @Published var songIntelCache: [UUID: SongIntel] = [:]
 
     private let persistenceURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -137,11 +139,18 @@ class CrateState: ObservableObject {
         return dir.appendingPathComponent("intel.json")
     }()
 
+    private let songIntelURL: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Crates", isDirectory: true)
+        return dir.appendingPathComponent("song-intel.json")
+    }()
+
     private var saveCancellable: AnyCancellable?
 
     init() {
         load()
         loadIntel()
+        loadSongIntel()
         // Auto-select first crate if none selected
         if activeCrateId == nil {
             activeCrateId = crates.first?.id
@@ -546,6 +555,28 @@ class CrateState: ObservableObject {
         guard let data = try? Data(contentsOf: intelURL),
               let loaded = try? decoder.decode([String: SetIntel].self, from: data) else { return }
         setIntelCache = Dictionary(uniqueKeysWithValues: loaded.compactMap { k, v in
+            UUID(uuidString: k).map { ($0, v) }
+        })
+    }
+
+    func cacheSongIntel(_ intel: SongIntel, for songId: UUID) {
+        songIntelCache[songId] = intel
+        saveSongIntel()
+    }
+
+    private func saveSongIntel() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let stringKeyed = Dictionary(uniqueKeysWithValues: songIntelCache.map { ($0.key.uuidString, $0.value) })
+        guard let data = try? encoder.encode(stringKeyed) else { return }
+        try? data.write(to: songIntelURL, options: .atomic)
+    }
+
+    private func loadSongIntel() {
+        let decoder = JSONDecoder()
+        guard let data = try? Data(contentsOf: songIntelURL),
+              let loaded = try? decoder.decode([String: SongIntel].self, from: data) else { return }
+        songIntelCache = Dictionary(uniqueKeysWithValues: loaded.compactMap { k, v in
             UUID(uuidString: k).map { ($0, v) }
         })
     }

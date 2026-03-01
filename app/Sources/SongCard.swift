@@ -3,9 +3,10 @@ import SwiftUI
 // MARK: - Song card
 
 struct SongCard: View {
-    let song:     Song
-    let position: Int
-    let crateId:  UUID
+    let song:         Song
+    let position:     Int
+    let crateId:      UUID
+    var onSelectSong: ((Song) -> Void)? = nil
     @EnvironmentObject var crateState:  CrateState
     @EnvironmentObject var audioPlayer: AudioPlayer
 
@@ -105,6 +106,8 @@ struct SongCard: View {
                 // ── Track avatar + source badge ───────────────
                 TrackAvatar(title: song.title, size: 28)
                     .overlay(alignment: .bottomTrailing) { avatarBadge }
+                    .onTapGesture { onSelectSong?(song) }
+                    .help("View track intel")
 
                 Spacer().frame(width: 10)
 
