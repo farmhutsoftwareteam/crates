@@ -2,6 +2,13 @@ import SwiftUI
 
 // MARK: - Data model
 
+struct SongPairing: Codable {
+    let title:  String
+    let artist: String
+    let reason: String   // why it works musically
+    let type:   String   // "before" | "after" | "blend"
+}
+
 struct SongIntel: Codable {
     let genre:          String
     let subgenre:       String
@@ -22,6 +29,7 @@ struct SongIntel: Codable {
     let afterBpmRange:  String?
     let firstTimeGuide: String
     let verdict:        String
+    let pairings:       [SongPairing]
 }
 
 // MARK: - Service
@@ -30,6 +38,8 @@ enum SongIntelService {
 
     static func analyse(song: Song) async -> SongIntel? {
         guard let claudePath = BPMService.findClaude() else { return nil }
+
+        let hasLocalData = song.energy != nil || song.danceability != nil || song.bpm != nil
 
         var lines: [String] = [
             "Track: \"\(song.title)\" by \(song.artist)"
@@ -46,11 +56,18 @@ enum SongIntelService {
         if let ms = song.durationMs {
             lines.append("Duration: \(ms / 60000):\(String(format: "%02d", (ms % 60000) / 1000))")
         }
+        if let sid = song.spotifyId    { lines.append("Spotify ID: \(sid)") }
 
         let context = lines.joined(separator: "\n")
 
+        let dataNote = hasLocalData
+            ? "Local audio analysis data is included above (from librosa). Use web search to verify and enrich."
+            : "No local audio analysis — this is a Spotify-only track. You MUST use web search to find the real BPM, musical key, release year, energy character, and song structure. Check Tunebat (tunebat.com), Beatport, 1001Tracklists, or any music database."
+
         let prompt = """
-        You are an expert DJ and music analyst. Search the web to verify details about this track. Think like a working DJ who needs to decide whether and how to play this track.
+        You are an expert DJ and music analyst with deep knowledge of electronic, dance, and club music. Think like a working DJ who needs to know exactly how and when to play this track.
+
+        \(dataNote)
 
         \(context)
 
@@ -74,8 +91,18 @@ enum SongIntelService {
           "before_bpm_range": "<BPM range e.g. 118-122 or null>",
           "after_bpm_range": "<BPM range e.g. 124-128 or null>",
           "first_time_guide": "<2–3 sentences: key moments and elements to listen for, surprises, signature sounds — max 220 chars>",
-          "verdict": "<one sentence DJ verdict: strongest use case — max 110 chars>"
+          "verdict": "<one sentence DJ verdict: strongest use case — max 110 chars>",
+          "pairings": [
+            {
+              "title": "<exact real track title>",
+              "artist": "<exact real artist name>",
+              "reason": "<why it works: key compatibility, BPM match, energy flow, vibe — max 80 chars>",
+              "type": "<before | after | blend>"
+            }
+          ]
         }
+
+        For pairings: give 4–5 REAL, well-known tracks that DJs commonly play alongside this song. Mix types: some 'before' (what leads into it), some 'after' (what follows it), some 'blend' (what works simultaneously or as a short blend). Be specific and accurate — real track titles and artists only.
         """
 
         return await Task.detached(priority: .utility) {
@@ -109,6 +136,15 @@ enum SongIntelService {
         }
         let moods = (obj["mood_tags"] as? [Any] ?? []).compactMap { $0 as? String }
 
+        let pairings = (obj["pairings"] as? [[String: Any]] ?? []).compactMap { p -> SongPairing? in
+            guard let title  = p["title"]  as? String,
+                  let artist = p["artist"] as? String,
+                  let reason = p["reason"] as? String,
+                  let type   = p["type"]   as? String
+            else { return nil }
+            return SongPairing(title: title, artist: artist, reason: reason, type: type)
+        }
+
         return SongIntel(
             genre:          str("genre"),
             subgenre:       str("subgenre"),
@@ -128,7 +164,8 @@ enum SongIntelService {
             beforeBpmRange: optStr("before_bpm_range"),
             afterBpmRange:  optStr("after_bpm_range"),
             firstTimeGuide: str("first_time_guide"),
-            verdict:        str("verdict")
+            verdict:        str("verdict"),
+            pairings:       pairings
         )
     }
 
@@ -297,6 +334,10 @@ struct SongIntelView: View {
                         KeyContextSection(song: song)
                         sectionDivider
                         GuideSection(intel: intel)
+                        if !intel.pairings.isEmpty {
+                            sectionDivider
+                            PairingsSection(pairings: intel.pairings)
+                        }
                         Spacer().frame(height: 24)
                     }
                 }
@@ -372,7 +413,7 @@ struct SongIntelView: View {
                         .font(.system(size: 8, weight: .black, design: .monospaced))
                         .tracking(2)
                         .foregroundColor(.cratesDim)
-                    Text("Structure · Mix cues · Crowd fit\nKey compat · First-time guide")
+                    Text("Structure · Mix cues · Crowd fit\nKey compat · Works well with")
                         .font(.system(size: 9))
                         .foregroundColor(.cratesGhost)
                         .multilineTextAlignment(.center)
@@ -890,6 +931,75 @@ private struct SongScanPulse: View {
                     scale = 1.9
                 }
             }
+    }
+}
+
+// MARK: - Pairings (works well with)
+
+private struct PairingsSection: View {
+    let pairings: [SongPairing]
+
+    private func typeColor(_ type: String) -> Color {
+        switch type {
+        case "before": return .cratesKey
+        case "after":  return Color(hex: "#FF3300")
+        case "blend":  return .cratesAccent
+        default:       return .cratesDim
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            songIntelLabel("WORKS WELL WITH")
+                .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 9)
+
+            ForEach(Array(pairings.enumerated()), id: \.offset) { i, pairing in
+                if i > 0 {
+                    Rectangle()
+                        .fill(Color.cratesBorder.opacity(0.5))
+                        .frame(height: 1)
+                        .padding(.horizontal, 12)
+                }
+                HStack(alignment: .top, spacing: 8) {
+                    // Type badge
+                    Text(pairing.type.uppercased())
+                        .font(.system(size: 6, weight: .black, design: .monospaced))
+                        .tracking(0.3)
+                        .foregroundColor(typeColor(pairing.type))
+                        .padding(.horizontal, 4).padding(.vertical, 2)
+                        .background(typeColor(pairing.type).opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                        .frame(width: 40, alignment: .leading)
+                        .padding(.top, 2)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 0) {
+                            Text(pairing.title)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(.cratesPrimary)
+                                .lineLimit(1)
+                            Text(" · ")
+                                .font(.system(size: 8))
+                                .foregroundColor(.cratesGhost)
+                            Text(pairing.artist)
+                                .font(.system(size: 8))
+                                .foregroundColor(.cratesDim)
+                                .lineLimit(1)
+                        }
+                        Text(pairing.reason)
+                            .font(.system(size: 8))
+                            .foregroundColor(Color(hex: "#505050"))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+            }
+
+            Spacer().frame(height: 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
